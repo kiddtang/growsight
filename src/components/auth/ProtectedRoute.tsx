@@ -1,10 +1,14 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { useProfileStore } from '../../stores/profileStore';
 
-const ProtectedRoute = () => {
-  const { user } = useAuthStore();
-  const { isFirstLogin } = useProfileStore();
+interface RoleProtectedRouteProps {
+  roles?: string[];
+  permissions?: string[];
+  fallbackPath?: string;
+}
+
+const ProtectedRoute = ({ roles, permissions, fallbackPath = '/dashboard' }: RoleProtectedRouteProps = {}) => {
+  const { user, hasPermission } = useAuthStore();
   const location = useLocation();
 
   if (!user) {
@@ -12,10 +16,19 @@ const ProtectedRoute = () => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If it's the user's first login and they're not already going to the profile page,
-  // redirect them to complete their profile
-  if (isFirstLogin && location.pathname !== '/profile') {
-    return <Navigate to="/profile" replace />;
+  // Check role-based access if roles are specified
+  if (roles && roles.length > 0) {
+    if (!roles.includes(user.role)) {
+      return <Navigate to={fallbackPath} replace />;
+    }
+  }
+
+  // Check permission-based access if permissions are specified
+  if (permissions && permissions.length > 0) {
+    const hasAllPermissions = permissions.every(permission => hasPermission(permission));
+    if (!hasAllPermissions) {
+      return <Navigate to={fallbackPath} replace />;
+    }
   }
 
   return <Outlet />;

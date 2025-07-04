@@ -17,12 +17,14 @@ import {
   RefreshCw,
   Activity,
   Target,
-  Tag
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import { useOrganizationStore } from '../stores/organizationStore';
 import { useUserStore } from '../stores/userStore';
 import { useDashboardStore } from '../stores/dashboardStore';
+import { useResultStore } from '../stores/resultStore';
 import Button from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 
@@ -31,11 +33,13 @@ const Dashboard = () => {
   const { currentOrganization } = useOrganizationStore();
   const { users, fetchUsers } = useUserStore();
   const { analytics, organizationAnalytics, fetchAnalytics, fetchAllOrganizationAnalytics, isLoading, clearAnalytics, error, clearError } = useDashboardStore();
+  const { results, fetchResults } = useResultStore();
   const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   
   const isSuperAdmin = user?.role === 'super_admin';
   const isOrgAdmin = user?.role === 'org_admin';
+  const isSubscriber = user?.role === 'subscriber';
   
   useEffect(() => {
     // Clear previous analytics when user changes
@@ -44,11 +48,14 @@ const Dashboard = () => {
     if (isSuperAdmin) {
       fetchAnalytics(); // Fetch aggregated data
       fetchAllOrganizationAnalytics(); // Fetch individual org data
+    } else if (isSubscriber && user) {
+      // For subscribers, fetch their personal results
+      fetchResults(user.id);
     } else if (user?.organizationId) {
       fetchAnalytics(user.organizationId);
       fetchUsers(user.organizationId);
     }
-  }, [user, isSuperAdmin, fetchAnalytics, fetchAllOrganizationAnalytics, fetchUsers, clearAnalytics]);
+  }, [user, isSuperAdmin, isSubscriber, fetchAnalytics, fetchAllOrganizationAnalytics, fetchUsers, fetchResults, clearAnalytics]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -60,6 +67,8 @@ const Dashboard = () => {
           fetchAnalytics(),
           fetchAllOrganizationAnalytics()
         ]);
+      } else if (isSubscriber && user) {
+        await fetchResults(user.id);
       } else if (user?.organizationId) {
         await fetchAnalytics(user.organizationId);
       }
@@ -138,6 +147,7 @@ const Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">
             {isSuperAdmin ? 'System-wide analytics and control center' : 
+             isSubscriber ? 'Your personal assessment progress and insights' :
              `${currentOrganization?.name || 'Organization'} management dashboard`}
           </p>
         </div>
@@ -177,7 +187,7 @@ const Dashboard = () => {
       )}
       
       {/* Analytics Overview - Only for Admin levels */}
-      {analytics && (
+      {analytics && !isSubscriber && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="bg-gradient-to-br from-primary-50 to-primary-100 border-l-4 border-primary-500">
             <CardContent className="p-6">
@@ -279,6 +289,113 @@ const Dashboard = () => {
                 <div className="flex items-center text-sm text-secondary-700">
                   <TrendingUp className="h-4 w-4 mr-1" />
                   {analytics.totalResponses} responses
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Subscriber Dashboard - Assignment Focused */}
+      {isSubscriber && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card className="bg-gradient-to-br from-primary-50 to-primary-100 border-l-4 border-primary-500">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-primary-700">My Assignments</p>
+                  <p className="mt-1 text-3xl font-semibold text-gray-900">
+                    {analytics?.pendingAssessments || 0}
+                  </p>
+                  <p className="text-xs text-primary-600 mt-1">Pending assessments</p>
+                </div>
+                <div className="p-3 bg-primary-500 bg-opacity-10 rounded-full">
+                  <ClipboardList className="h-6 w-6 text-primary-600" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-primary-700 hover:text-primary-800 px-0"
+                  rightIcon={<ArrowRight className="h-4 w-4" />}
+                  onClick={() => navigate('/my-assessments')}
+                >
+                  View Assignments
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-success-50 to-success-100 border-l-4 border-success-500">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-success-700">Completed</p>
+                  <p className="mt-1 text-3xl font-semibold text-gray-900">
+                    {analytics?.completedAssessments || 0}
+                  </p>
+                  <p className="text-xs text-success-600 mt-1">Assessments done</p>
+                </div>
+                <div className="p-3 bg-success-500 bg-opacity-10 rounded-full">
+                  <CheckCircle className="h-6 w-6 text-success-600" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-success-700 hover:text-success-800 px-0"
+                  rightIcon={<ArrowRight className="h-4 w-4" />}
+                  onClick={() => navigate('/my-results')}
+                >
+                  View Results
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-secondary-50 to-secondary-100 border-l-4 border-secondary-500">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-secondary-700">My Rating</p>
+                  <p className="mt-1 text-3xl font-semibold text-gray-900">
+                    {analytics?.averageRating ? analytics.averageRating.toFixed(1) : 'N/A'}
+                  </p>
+                  <p className="text-xs text-secondary-600 mt-1">out of 7</p>
+                </div>
+                <div className="p-3 bg-secondary-500 bg-opacity-10 rounded-full">
+                  <Star className="h-6 w-6 text-secondary-600" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="flex items-center text-sm text-secondary-700">
+                  <TrendingUp className="h-4 w-4 mr-1" />
+                  Personal performance
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-accent-50 to-accent-100 border-l-4 border-accent-500">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-accent-700">Progress</p>
+                  <p className="mt-1 text-3xl font-semibold text-gray-900">
+                    {analytics?.totalAssessments ? ((analytics.completedAssessments / analytics.totalAssessments) * 100).toFixed(0) : 0}%
+                  </p>
+                  <p className="text-xs text-accent-600 mt-1">Completion rate</p>
+                </div>
+                <div className="p-3 bg-accent-500 bg-opacity-10 rounded-full">
+                  <Target className="h-6 w-6 text-accent-600" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="flex items-center text-sm text-accent-700">
+                  <Activity className="h-4 w-4 mr-1" />
+                  Assessment progress
                 </div>
               </div>
             </CardContent>
@@ -622,7 +739,7 @@ const Dashboard = () => {
         </Card>
         
         {/* Competency Framework Card */}
-        {(isSuperAdmin || (isOrgAdmin && currentOrganization?.orgAdminPermissions?.includes('create_assessments'))) && (
+        {(isOrgAdmin && currentOrganization?.orgAdminPermissions?.includes('create_assessments')) && (
           <Card className="hover:shadow-card-hover transition-shadow">
             <CardContent className="p-6">
               <div className="text-center">
@@ -643,7 +760,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         )}
-      </div>
+        </div>
     </div>
   );
 };

@@ -11,7 +11,11 @@ import {
   FileSpreadsheet,
   FilePlus,
   Clock,
-  RefreshCw
+  RefreshCw,
+  AlertCircle,
+  XCircle,
+  Building,
+  BarChart3
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../ui/Card';
 import Button from '../ui/Button';
@@ -24,7 +28,7 @@ interface ImportExportManagerProps {
   onImportComplete?: () => void;
 }
 
-const ImportExportManager: React.FC<ImportExportManagerProps> = ({ onImportComplete }) => {
+export const ImportExportManager: React.FC<ImportExportManagerProps> = ({ onImportComplete }) => {
   const { user } = useAuthStore();
   const { currentOrganization } = useOrganizationStore();
   const { departments } = useDepartmentStore();
@@ -45,6 +49,11 @@ const ImportExportManager: React.FC<ImportExportManagerProps> = ({ onImportCompl
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState('');
   
   // Mock import/export logs for demo
   const mockImportLogs: ImportLog[] = [
@@ -190,81 +199,89 @@ const ImportExportManager: React.FC<ImportExportManagerProps> = ({ onImportCompl
   };
   
   const handleExport = async () => {
-    if (!user?.organizationId) {
-      setError('Organization ID is required');
-      return;
-    }
-    
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
+    setIsExporting(true);
+    setStatus('idle');
     
     try {
-      // Simulate export processing
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Determine export scope based on user role
+      const scope = user?.role === 'super_admin' ? 'all' : currentOrganization?.id;
       
-      const timestamp = new Date().toISOString().split('T')[0];
-      const fileName = `${exportType}_export_${timestamp}.${exportType === 'results' || exportType === 'analytics' ? 'pdf' : 'csv'}`;
+      let fileName = '';
+      let data: any = {};
       
-      // Create a new export log
-      const newExport: ExportLog = {
-        id: `export-${Date.now()}`,
-        organizationId: user.organizationId,
-        exportedById: user.id,
-        fileName: fileName,
-        fileType: fileName.endsWith('.pdf') ? 'pdf' : 'csv',
-        exportType: exportType,
-        status: 'completed',
-        recordsExported: Math.floor(Math.random() * 100) + 10,
-        isAnonymized: anonymizeExport,
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        downloadUrl: '#',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      setRecentExports([newExport, ...recentExports]);
-      
-      // Create sample content based on export type
-      let content = '';
-      
-      if (exportType === 'users') {
-        content = 'email,firstName,lastName,role,department\n';
-        content += 'john.doe@example.com,John,Doe,employee,Engineering\n';
-        content += 'jane.smith@example.com,Jane,Smith,reviewer,Human Resources\n';
-      } else if (exportType === 'assessments') {
-        content = 'title,description,type,sections,questions\n';
-        content += 'Leadership Assessment,Evaluate leadership skills,custom,3,15\n';
-        content += 'Communication Skills,Assess communication effectiveness,preset,2,10\n';
-      } else if (exportType === 'results') {
-        // For PDF, we'll just create a text representation
-        content = 'ASSESSMENT RESULTS REPORT\n\n';
-        content += 'Organization: ' + currentOrganization?.name + '\n';
-        content += 'Generated: ' + new Date().toLocaleString() + '\n\n';
-        content += 'This is a sample PDF export of assessment results.\n';
-        content += anonymizeExport ? 'Data has been anonymized for privacy.' : 'Contains individual data.';
+      switch (exportType) {
+        case 'all':
+          fileName = `complete_export_${new Date().toISOString().split('T')[0]}.json`;
+          data = {
+            users: await exportUsers(scope),
+            assessments: await exportAssessments(scope),
+            results: await exportResults(scope),
+            organizations: user?.role === 'super_admin' ? await exportOrganizations() : undefined
+          };
+          break;
+        case 'users':
+          fileName = `users_export_${new Date().toISOString().split('T')[0]}.json`;
+          data = await exportUsers(scope);
+          break;
+        case 'assessments':
+          fileName = `assessments_export_${new Date().toISOString().split('T')[0]}.json`;
+          data = await exportAssessments(scope);
+          break;
+        case 'results':
+          fileName = `results_export_${new Date().toISOString().split('T')[0]}.json`;
+          data = await exportResults(scope);
+          break;
       }
       
-      // Trigger download
-      const blob = new Blob([content], { type: exportType === 'results' || exportType === 'analytics' ? 'application/pdf' : 'text/csv' });
-      const url = URL.createObjectURL(blob);
+      // Create and download file
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(url);
       
-      setSuccess(`Successfully exported ${newExport.recordsExported} records.`);
-    } catch (err) {
-      setError((err as Error).message || 'Failed to export data');
+      setStatus('success');
+      setStatusMessage(`Successfully exported ${exportType} data`);
+    } catch (error) {
+      console.error('Export error:', error);
+      setStatus('error');
+      setStatusMessage('Failed to export data. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsExporting(false);
     }
   };
   
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setStatus('idle');
+    }
+  };
+  
+  // Mock export functions - replace with actual API calls
+  const exportUsers = async (scope: string | 'all') => {
+    // Mock implementation
+    return { users: [], total: 0, scope };
+  };
+
+  const exportAssessments = async (scope: string | 'all') => {
+    // Mock implementation
+    return { assessments: [], total: 0, scope };
+  };
+
+  const exportResults = async (scope: string | 'all') => {
+    // Mock implementation
+    return { results: [], total: 0, scope };
+  };
+
+  const exportOrganizations = async () => {
+    // Mock implementation
+    return { organizations: [], total: 0 };
+  };
+
   const getImportTypeIcon = (type: string) => {
     switch (type) {
       case 'users':
@@ -293,651 +310,253 @@ const ImportExportManager: React.FC<ImportExportManagerProps> = ({ onImportCompl
     }
   };
   
+  const getRoleBasedTitle = () => {
+    return user?.role === 'super_admin' 
+      ? 'System-Wide Import/Export Manager' 
+      : 'Organization Import/Export Manager';
+  };
+
+  const getRoleBasedDescription = () => {
+    return user?.role === 'super_admin'
+      ? 'Import and export data across all organizations'
+      : 'Import and export data for your organization';
+  };
+  
   return (
-    <div className="space-y-6">
-      <div className="border-b border-gray-200 pb-4">
-        <h2 className="text-xl font-bold text-gray-900">Import & Export</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Import data from CSV files or export data for reporting and backup
-        </p>
-      </div>
-      
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="bg-success-50 border border-success-200 text-success-700 px-4 py-3 rounded flex items-center">
-          <CheckCircle className="h-5 w-5 mr-2" />
-          {success}
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">{getRoleBasedTitle()}</h1>
+          <p className="text-gray-600 mt-2">{getRoleBasedDescription()}</p>
         </div>
-      )}
-      
-      {error && (
-        <div className="bg-error-50 border border-error-200 text-error-700 px-4 py-3 rounded flex items-center">
-          <AlertTriangle className="h-5 w-5 mr-2" />
-          {error}
-        </div>
-      )}
-      
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('import')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-              activeTab === 'import'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Upload className="h-4 w-4 mr-1" />
-            Import Data
-          </button>
-          <button
-            onClick={() => setActiveTab('export')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-              activeTab === 'export'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Download className="h-4 w-4 mr-1" />
-            Export Data
-          </button>
-        </nav>
       </div>
-      
-      {/* Import Tab */}
-      {activeTab === 'import' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Upload className="h-5 w-5 mr-2" />
-                Import Data
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Import Type
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setImportType('users')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        importType === 'users' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <Users className={`h-5 w-5 mr-3 ${importType === 'users' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${importType === 'users' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Users
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Import users and assign to departments
-                        </div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setImportType('assessments')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        importType === 'assessments' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <ClipboardList className={`h-5 w-5 mr-3 ${importType === 'assessments' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${importType === 'assessments' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Assessments
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Import assessment templates
-                        </div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setImportType('responses')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        importType === 'responses' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <FileText className={`h-5 w-5 mr-3 ${importType === 'responses' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${importType === 'responses' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Responses
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Import assessment responses
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-                
-                {importType === 'users' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Department (Optional)
-                    </label>
-                    <select
-                      value={selectedDepartment}
-                      onChange={(e) => setSelectedDepartment(e.target.value)}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                    >
-                      <option value="">All Departments</option>
-                      {departments.map(dept => (
-                        <option key={dept.id} value={dept.id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      If selected, imported users will be assigned to this department
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Export Section */}
+        <Card>
+          <div className="p-6">
+            <div className="flex items-center mb-4">
+              <Download className="w-6 h-6 text-blue-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-900">Export Data</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Export Type
+                </label>
+                <select
+                  value={exportType}
+                  onChange={(e) => setExportType(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">Complete Export (All Data)</option>
+                  <option value="users">Users Only</option>
+                  <option value="assessments">Assessments Only</option>
+                  <option value="results">Results Only</option>
+                </select>
+              </div>
+
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">Export Scope:</p>
+                    <p className="mt-1">
+                      {user?.role === 'super_admin' 
+                        ? 'All organizations and data' 
+                        : `${currentOrganization?.name || 'Your organization'} only`
+                      }
                     </p>
                   </div>
-                )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Upload File
-                  </label>
-                  <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-                    <div className="space-y-1 text-center">
-                      <FileSpreadsheet className="mx-auto h-12 w-12 text-gray-400" />
-                      <div className="flex text-sm text-gray-600">
-                        <label
-                          htmlFor="file-upload"
-                          className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
-                        >
-                          <span>Upload a file</span>
-                          <input
-                            id="file-upload"
-                            name="file-upload"
-                            type="file"
-                            className="sr-only"
-                            accept=".csv,.xlsx"
-                            onChange={handleFileChange}
-                            ref={fileInputRef}
-                          />
-                        </label>
-                        <p className="pl-1">or drag and drop</p>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        CSV or Excel files up to 10MB
-                      </p>
-                    </div>
-                  </div>
-                  {selectedFile && (
-                    <div className="mt-2 text-sm text-gray-600 flex items-center">
-                      <FileText className="h-4 w-4 mr-1 text-gray-500" />
-                      Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                    </div>
-                  )}
-                </div>
-                
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Import Format</h3>
-                  {importType === 'users' && (
-                    <div className="text-sm text-gray-600">
-                      <p className="mb-2">CSV file should have the following columns:</p>
-                      <code className="bg-gray-100 p-1 rounded text-xs block mb-2">
-                        email,firstName,lastName,role,department
-                      </code>
-                      <p className="mb-1">Where:</p>
-                      <ul className="list-disc list-inside text-xs space-y-1">
-                        <li><strong>email</strong>: User's email address (required)</li>
-                        <li><strong>firstName</strong>: User's first name (required)</li>
-                        <li><strong>lastName</strong>: User's last name (required)</li>
-                        <li><strong>role</strong>: One of: employee, reviewer, org_admin, subscriber (defaults to employee)</li>
-                        <li><strong>department</strong>: Department name (optional)</li>
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {importType === 'assessments' && (
-                    <div className="text-sm text-gray-600">
-                      <p>Please download and use our assessment template format.</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        leftIcon={<Download className="h-4 w-4" />}
-                        onClick={() => {
-                          // Create and download template
-                          const template = 'title,description,section,question,questionType,isRequired,scaleMax\n' +
-                            'Leadership Assessment,Evaluate leadership skills,Communication,How effectively does this person communicate complex ideas?,rating,true,7\n' +
-                            'Leadership Assessment,Evaluate leadership skills,Communication,How well does this person listen to others?,rating,true,7\n' +
-                            'Leadership Assessment,Evaluate leadership skills,Decision Making,How well does this person make decisions under pressure?,rating,true,7';
-                          
-                          const blob = new Blob([template], { type: 'text/csv' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'assessment_template.csv';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(url);
-                        }}
-                      >
-                        Download Template
-                      </Button>
-                    </div>
-                  )}
-                  
-                  {importType === 'responses' && (
-                    <div className="text-sm text-gray-600">
-                      <p>Please download and use our responses template format.</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        leftIcon={<Download className="h-4 w-4" />}
-                        onClick={() => {
-                          // Create and download template
-                          const template = 'assessmentId,employeeEmail,reviewerEmail,questionId,rating,comment\n' +
-                            'assessment-123,john.doe@example.com,jane.smith@example.com,question-1,5,Good communication skills\n' +
-                            'assessment-123,john.doe@example.com,jane.smith@example.com,question-2,4,Shows potential but needs improvement';
-                          
-                          const blob = new Blob([template], { type: 'text/csv' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'responses_template.csv';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          URL.revokeObjectURL(url);
-                        }}
-                      >
-                        Download Template
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
-            </CardContent>
-            <CardFooter className="bg-gray-50 border-t border-gray-200">
-              <div className="flex justify-end w-full">
-                <Button
-                  onClick={handleImport}
-                  isLoading={isLoading}
-                  disabled={!selectedFile || isLoading}
-                  leftIcon={<Upload className="h-4 w-4" />}
+
+              <Button
+                onClick={handleExport}
+                disabled={isExporting}
+                isLoading={isExporting}
+                className="w-full"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? 'Exporting...' : 'Export Data'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Import Section */}
+        <Card>
+          <div className="p-6">
+            <div className="flex items-center mb-4">
+              <Upload className="w-6 h-6 text-green-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-900">Import Data</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Import Type
+                </label>
+                <select
+                  value={importType}
+                  onChange={(e) => setImportType(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  Import
-                </Button>
+                  <option value="users">Users</option>
+                  <option value="assessments">Assessments</option>
+                </select>
               </div>
-            </CardFooter>
-          </Card>
-          
-          {/* Recent Imports */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="h-5 w-5 mr-2" />
-                Recent Imports
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {recentImports.length === 0 ? (
-                <div className="text-center py-6">
-                  <FilePlus className="h-12 w-12 mx-auto text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No imports yet</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Import data to see your import history here
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select File
+                </label>
+                <input
+                  type="file"
+                  accept=".json,.csv"
+                  onChange={handleFileSelect}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {selectedFile && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Selected: {selectedFile.name}
                   </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          File
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Type
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Results
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {recentImports.map((importLog) => (
-                        <tr key={importLog.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {importLog.fileName}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <div className="flex items-center">
-                              {getImportTypeIcon(importLog.importType)}
-                              <span className="ml-2 capitalize">{importLog.importType}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {new Date(importLog.startedAt).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              {getStatusIcon(importLog.status)}
-                              <span className={`ml-2 text-sm ${
-                                importLog.status === 'completed' ? 'text-success-700' :
-                                importLog.status === 'failed' ? 'text-error-700' :
-                                'text-gray-500'
-                              }`}>
-                                {importLog.status.charAt(0).toUpperCase() + importLog.status.slice(1)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {importLog.status === 'completed' ? (
-                              <span>
-                                {importLog.recordsCreated} created, {importLog.recordsUpdated} updated
-                              </span>
-                            ) : importLog.status === 'failed' ? (
-                              <span className="text-error-600">{importLog.errorMessage}</span>
-                            ) : (
-                              <span>-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-      
-      {/* Export Tab */}
-      {activeTab === 'export' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Download className="h-5 w-5 mr-2" />
-                Export Data
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Export Type
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setExportType('users')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        exportType === 'users' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <Users className={`h-5 w-5 mr-3 ${exportType === 'users' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${exportType === 'users' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Users
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Export user list with departments
-                        </div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setExportType('assessments')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        exportType === 'assessments' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <ClipboardList className={`h-5 w-5 mr-3 ${exportType === 'assessments' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${exportType === 'assessments' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Assessments
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Export assessment templates
-                        </div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setExportType('results')}
-                      className={`flex items-center p-4 border-2 rounded-lg ${
-                        exportType === 'results' 
-                          ? 'border-primary-500 bg-primary-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <FileText className={`h-5 w-5 mr-3 ${exportType === 'results' ? 'text-primary-600' : 'text-gray-500'}`} />
-                      <div className="text-left">
-                        <div className={`font-medium ${exportType === 'results' ? 'text-primary-700' : 'text-gray-900'}`}>
-                          Results
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Export assessment results
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-                
-                {(exportType === 'users' || exportType === 'assessments') && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Department Filter (Optional)
-                    </label>
-                    <select
-                      value={selectedDepartment}
-                      onChange={(e) => setSelectedDepartment(e.target.value)}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
-                    >
-                      <option value="">All Departments</option>
-                      {departments.map(dept => (
-                        <option key={dept.id} value={dept.id}>
-                          {dept.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      If selected, only data from this department will be exported
+                )}
+              </div>
+
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 mr-2 mt-0.5" />
+                  <div className="text-sm text-yellow-800">
+                    <p className="font-medium">Import Warning:</p>
+                    <p className="mt-1">
+                      Importing data will overwrite existing records with the same ID. 
+                      Please backup your data before importing.
                     </p>
                   </div>
-                )}
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Export Options
-                  </label>
-                  <div className="space-y-3">
-                    {(exportType === 'results' || exportType === 'analytics') && (
-                      <div className="flex items-center">
-                        <input
-                          id="anonymize"
-                          type="checkbox"
-                          checked={anonymizeExport}
-                          onChange={(e) => setAnonymizeExport(e.target.checked)}
-                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="anonymize" className="ml-2 block text-sm text-gray-900">
-                          Anonymize data (remove personally identifiable information)
-                        </label>
-                      </div>
-                    )}
-                    
-                    {(exportType === 'users' || exportType === 'assessments') && (
-                      <div className="flex items-center">
-                        <input
-                          id="headers"
-                          type="checkbox"
-                          checked={includeHeaders}
-                          onChange={(e) => setIncludeHeaders(e.target.checked)}
-                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="headers" className="ml-2 block text-sm text-gray-900">
-                          Include column headers
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Export Format</h3>
-                  <div className="text-sm text-gray-600">
-                    {(exportType === 'results' || exportType === 'analytics') ? (
-                      <p>Data will be exported as a PDF file with charts and visualizations.</p>
-                    ) : (
-                      <p>Data will be exported as a CSV file that can be opened in Excel or other spreadsheet software.</p>
-                    )}
-                    
-                    {(exportType === 'results' || exportType === 'analytics') && anonymizeExport && (
-                      <div className="mt-2 p-2 bg-primary-50 border border-primary-100 rounded text-primary-700 text-xs">
-                        <Info className="h-4 w-4 inline mr-1" />
-                        Anonymized exports protect individual privacy while providing valuable insights.
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
-            </CardContent>
-            <CardFooter className="bg-gray-50 border-t border-gray-200">
-              <div className="flex justify-end w-full">
-                <Button
-                  onClick={handleExport}
-                  isLoading={isLoading}
-                  disabled={isLoading}
-                  leftIcon={<Download className="h-4 w-4" />}
-                >
-                  Export
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
-          
-          {/* Recent Exports */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="h-5 w-5 mr-2" />
-                Recent Exports
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {recentExports.length === 0 ? (
-                <div className="text-center py-6">
-                  <FilePlus className="h-12 w-12 mx-auto text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No exports yet</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Export data to see your export history here
-                  </p>
-                </div>
+
+              <Button
+                onClick={handleImport}
+                disabled={isImporting || !selectedFile}
+                isLoading={isImporting}
+                className="w-full"
+                variant="outline"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                {isImporting ? 'Importing...' : 'Import Data'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Status Messages */}
+      {status !== 'idle' && (
+        <Card>
+          <div className="p-4">
+            <div className={`flex items-center ${
+              status === 'success' ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {status === 'success' ? (
+                <CheckCircle className="w-5 h-5 mr-2" />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          File
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Type
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Records
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Download
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {recentExports.map((exportLog) => (
-                        <tr key={exportLog.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {exportLog.fileName}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <div className="flex items-center">
-                              {getImportTypeIcon(exportLog.exportType)}
-                              <span className="ml-2 capitalize">{exportLog.exportType}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {new Date(exportLog.startedAt).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              {getStatusIcon(exportLog.status)}
-                              <span className={`ml-2 text-sm ${
-                                exportLog.status === 'completed' ? 'text-success-700' :
-                                exportLog.status === 'failed' ? 'text-error-700' :
-                                'text-gray-500'
-                              }`}>
-                                {exportLog.status.charAt(0).toUpperCase() + exportLog.status.slice(1)}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {exportLog.recordsExported}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {exportLog.status === 'completed' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                leftIcon={<Download className="h-4 w-4" />}
-                                onClick={() => {
-                                  // Simulate download
-                                  alert('Download would start in production environment');
-                                }}
-                              >
-                                Download
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <XCircle className="w-5 h-5 mr-2" />
               )}
-            </CardContent>
-          </Card>
-        </div>
+              <span className="font-medium">{statusMessage}</span>
+            </div>
+          </div>
+        </Card>
       )}
+
+      {/* Quick Actions */}
+      <Card>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExportType('users');
+                handleExport();
+              }}
+              disabled={isExporting}
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Export Users
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExportType('assessments');
+                handleExport();
+              }}
+              disabled={isExporting}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Export Assessments
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExportType('results');
+                handleExport();
+              }}
+              disabled={isExporting}
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Export Results
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Data Overview */}
+      <Card>
+        <div className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Data Overview</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="flex items-center">
+                <Users className="w-6 h-6 text-blue-600 mr-2" />
+                <div>
+                  <p className="text-sm font-medium text-blue-600">Total Users</p>
+                  <p className="text-2xl font-bold text-blue-900">0</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <div className="flex items-center">
+                <Building className="w-6 h-6 text-green-600 mr-2" />
+                <div>
+                  <p className="text-sm font-medium text-green-600">Organizations</p>
+                  <p className="text-2xl font-bold text-green-900">0</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <div className="flex items-center">
+                <FileText className="w-6 h-6 text-purple-600 mr-2" />
+                <div>
+                  <p className="text-sm font-medium text-purple-600">Assessments</p>
+                  <p className="text-2xl font-bold text-purple-900">0</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <div className="flex items-center">
+                <BarChart3 className="w-6 h-6 text-orange-600 mr-2" />
+                <div>
+                  <p className="text-sm font-medium text-orange-600">Results</p>
+                  <p className="text-2xl font-bold text-orange-900">0</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };

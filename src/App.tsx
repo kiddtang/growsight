@@ -16,7 +16,11 @@ import Users from './pages/admin/Users';
 import Assessments from './pages/admin/Assessments';
 import AssessmentAssignments from './pages/admin/AssessmentAssignments';
 import Results from './pages/admin/Results';
+import AssessmentResults from './pages/admin/AssessmentResults';
 import PermissionManager from './pages/admin/PermissionManager';
+import ImportExport from './pages/admin/ImportExport';
+import TemplateManager from './pages/admin/TemplateManager';
+import Reporting from './pages/admin/Reporting';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import UserAssessments from './pages/user/UserAssessments';
@@ -26,16 +30,21 @@ import AssessmentBuilder from './pages/admin/AssessmentBuilder';
 import AssessmentForm from './pages/user/AssessmentForm';
 import { config, validateEnvironment } from './config/environment';
 import SystemSettings from './pages/admin/SystemSettings';
-import SystemHealth from './pages/admin/SystemHealth';
-import AuditLog from './pages/admin/AuditLog';
+import RootDashboard from './pages/root/RootDashboard';
+
 import AccessRequests from './pages/admin/AccessRequests';
 import Branding from './pages/admin/Branding';
-import AnalysisNotes from './pages/admin/AnalysisNotes';
+import OrganizationBrandingPage from './pages/admin/OrganizationBrandingPage';
+
 import CompetencyManager from './pages/admin/CompetencyManager';
 import SupportHub from './pages/admin/SupportHub';
 import { ToastContainer } from './components/ui/ToastNotification';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import SecureLogger from './lib/secureLogger';
+import SubscriberAssessments from './pages/subscriber/SubscriberAssessments';
+import RoleProtectedRoute from './components/auth/RoleProtectedRoute';
+import Assessment360Reporting from './pages/admin/Assessment360Reporting';
+import Assessment360Selector from './components/assessments/Assessment360Selector';
 
 function App() {
   const { user, refreshSession } = useAuthStore();
@@ -115,6 +124,11 @@ function App() {
                 <Dashboard />
               </ErrorBoundary>
             } />
+            <Route path="/root-dashboard" element={
+              <ErrorBoundary>
+                <RootDashboard />
+              </ErrorBoundary>
+            } />
             <Route path="/organizations" element={
               <ErrorBoundary>
                 <Organizations />
@@ -150,11 +164,60 @@ function App() {
                 <Results />
               </ErrorBoundary>
             } />
-            <Route path="/analysis-notes" element={
+            <Route path="/assessment-results" element={
               <ErrorBoundary>
-                <AnalysisNotes />
+                <AssessmentResults />
               </ErrorBoundary>
             } />
+
+            <Route path="/assessment-360" element={
+              <ErrorBoundary>
+                <RoleProtectedRoute 
+                  allowedRoles={['super_admin', 'org_admin']}
+                  requiredPermissions={['view_results']}
+                  requiredFeature="reporting"
+                >
+                  <Assessment360Selector />
+                </RoleProtectedRoute>
+              </ErrorBoundary>
+            } />
+
+            <Route path="/assessment-360/:assessmentId/:participantId?" element={
+              <ErrorBoundary>
+                <RoleProtectedRoute 
+                  allowedRoles={['super_admin', 'org_admin']}
+                  requiredPermissions={['view_results']}
+                  requiredFeature="reporting"
+                >
+                  <Assessment360Reporting />
+                </RoleProtectedRoute>
+              </ErrorBoundary>
+            } />
+
+            <Route path="/import-export" element={
+              <ErrorBoundary>
+                <ImportExport />
+              </ErrorBoundary>
+            } />
+
+            <Route path="/templates" element={
+              <ErrorBoundary>
+                <TemplateManager />
+              </ErrorBoundary>
+            } />
+
+            <Route path="/reporting" element={
+              <ErrorBoundary>
+                <RoleProtectedRoute 
+                  allowedRoles={['super_admin', 'org_admin']}
+                  requiredPermissions={['view_reports']}
+                  requiredFeature="reporting"
+                >
+                  <Reporting />
+                </RoleProtectedRoute>
+              </ErrorBoundary>
+            } />
+
             <Route path="/competencies" element={
               <ErrorBoundary>
                 <CompetencyManager />
@@ -172,16 +235,7 @@ function App() {
                 <SystemSettings />
               </ErrorBoundary>
             } />
-            <Route path="/system-health" element={
-              <ErrorBoundary>
-                <SystemHealth />
-              </ErrorBoundary>
-            } />
-            <Route path="/audit-log" element={
-              <ErrorBoundary>
-                <AuditLog />
-              </ErrorBoundary>
-            } />
+
             <Route path="/access-requests" element={
               <ErrorBoundary>
                 <AccessRequests />
@@ -192,36 +246,45 @@ function App() {
                 <Branding />
               </ErrorBoundary>
             } />
-            
+            <Route path="/organization-branding" element={
+              <ErrorBoundary>
+                <OrganizationBrandingPage />
+              </ErrorBoundary>
+            } />
+
             {/* User Routes */}
-            <Route path="/my-assessments" element={
+            <Route path="/user-assessments" element={
               <ErrorBoundary>
                 <UserAssessments />
               </ErrorBoundary>
             } />
-            <Route path="/my-assessments/:id" element={
-              <ErrorBoundary>
-                <AssessmentForm />
-              </ErrorBoundary>
-            } />
-            <Route path="/my-results" element={
+            <Route path="/user-results" element={
               <ErrorBoundary>
                 <UserResults />
               </ErrorBoundary>
             } />
-            <Route path="/profile" element={
+            <Route path="/user-profile" element={
               <ErrorBoundary>
                 <UserProfile />
               </ErrorBoundary>
             } />
+            <Route path="/assessment/:id" element={
+              <ErrorBoundary>
+                <AssessmentForm />
+              </ErrorBoundary>
+            } />
+
+            {/* Subscriber Routes */}
+            <Route path="/subscriber-assessments" element={
+              <ErrorBoundary>
+                <SubscriberAssessments />
+              </ErrorBoundary>
+            } />
+
+            {/* Default redirect */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Route>
-        
-        {/* Root redirect - Always redirect to login if not authenticated */}
-        <Route 
-          path="/" 
-          element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} 
-        />
         
         {/* 404 Route */}
         <Route path="*" element={<NotFound />} />

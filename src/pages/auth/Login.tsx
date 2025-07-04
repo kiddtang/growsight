@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { LogIn, Mail, KeyRound, AlertTriangle, CheckCircle, Building2 } from 'lucide-react';
+import { LogIn, Mail, KeyRound, AlertTriangle, CheckCircle, Building2, Globe } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrganizationStore } from '../../stores/organizationStore';
+import { usePDFExportStore } from '../../stores/pdfExportStore';
 import Button from '../../components/ui/Button';
 import FormInput from '../../components/ui/FormInput';
 
@@ -48,18 +49,27 @@ const isValidLocationState = (state: unknown): state is LocationState => {
 
 const Login = () => {
   const { login, sendOTP, isLoading, error, clearError } = useAuthStore();
-  const { fetchProfile, isFirstLogin } = useProfileStore();
-  const { organizations, fetchOrganizations } = useOrganizationStore();
+  const { fetchProfile } = useProfileStore();
+  const { organizations, fetchOrganizations, currentOrganization } = useOrganizationStore();
+  const { pdfSettings } = usePDFExportStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [loginMode, setLoginMode] = useState<'password' | 'otp'>('password');
   const [otpSent, setOtpSent] = useState(false);
   const [loginAttempts, setLoginAttempts] = useState(0);
+  const [selectedOrgId, setSelectedOrgId] = useState('');
   
   // Safely extract location state with type checking
   const locationState = isValidLocationState(location.state) ? location.state : {};
   const from = locationState.from?.pathname || '/dashboard';
   const message = locationState.message;
+  
+  const demoCredentials = {
+    organizationId: 'demo-org-1',
+    email: 'admin@acme.com',
+    password: 'password123',
+  };
+  const formRef = useRef<HTMLFormElement>(null);
   
   useEffect(() => {
     // Clear any previous errors when component mounts or login mode changes
@@ -104,12 +114,8 @@ const Login = () => {
       setLoginAttempts(0); // Reset attempts on success
       
       // Fetch user profile after successful login
-      if (isFirstLogin) {
-        // If it's the first login, redirect to profile page to complete setup
-        navigate('/profile', { replace: true });
-      } else {
-        navigate(from, { replace: true });
-      }
+      // Redirect to dashboard or intended destination
+      navigate(from, { replace: true });
     } catch (err) {
       setLoginAttempts(prev => prev + 1);
       // Error is handled by the store
@@ -128,8 +134,30 @@ const Login = () => {
   
   return (
     <div>
+      {/* Organization Branding Header */}
+      {currentOrganization && (
+        <div className="text-center mb-6">
+          {pdfSettings.logoUrl && (
+            <div className="mb-4">
+              <img 
+                src={pdfSettings.logoUrl} 
+                alt={`${currentOrganization.name} Logo`}
+                className="h-12 mx-auto"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            {currentOrganization.name}
+          </h1>
+          <p className="text-gray-600 text-sm">360° Feedback Platform</p>
+        </div>
+      )}
+      
       <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-      <p className="text-gray-600 mb-6">Sign in to your Growsight platform</p>
+      <p className="text-gray-600 mb-6">Sign in to your platform</p>
       
       {/* Success message from redirect */}
       {message && (
@@ -185,11 +213,10 @@ const Login = () => {
 
       {/* Password Login Form */}
       {loginMode === 'password' && (
-        <form onSubmit={handleLoginSubmit(onPasswordLogin)} className="space-y-4">
+        <form ref={formRef} onSubmit={handleLoginSubmit(onPasswordLogin)} className="space-y-4">
           <FormInput
             label="Organization ID"
             autoComplete="organization"
-            leftIcon={<Building2 className="h-5 w-5 text-gray-400" />}
             error={loginErrors.organizationId?.message}
             {...registerLogin('organizationId')}
           />
@@ -226,6 +253,24 @@ const Login = () => {
           >
             Sign in
           </Button>
+          {/* Demo Login Button */}
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            fullWidth
+            className="mt-2"
+            onClick={() => {
+              // Set demo credentials in the form fields
+              (document.querySelector('input[name="organizationId"]') as HTMLInputElement).value = demoCredentials.organizationId;
+              (document.querySelector('input[name="email"]') as HTMLInputElement).value = demoCredentials.email;
+              (document.querySelector('input[name="password"]') as HTMLInputElement).value = demoCredentials.password;
+              // Optionally, trigger form submit
+              formRef.current?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+            }}
+          >
+            Demo Login
+          </Button>
         </form>
       )}
 
@@ -235,7 +280,6 @@ const Login = () => {
           <FormInput
             label="Organization ID"
             autoComplete="organization"
-            leftIcon={<Building2 className="h-5 w-5 text-gray-400" />}
             error={otpErrors.organizationId?.message}
             {...registerOTP('organizationId')}
           />
@@ -290,26 +334,7 @@ const Login = () => {
         </p>
       </div>
 
-      {/* Organization ID Help */}
-      <div className="mt-6 p-4 bg-primary-50 border border-primary-100 rounded-md">
-        <h3 className="text-sm font-medium text-primary-800 mb-2">Organization ID Help</h3>
-        <p className="text-xs text-primary-700">
-          Your Organization ID is a unique identifier for your company or team. It was provided to you by your administrator.
-        </p>
-        <p className="text-xs text-primary-700 mt-1">
-          If you don't know your Organization ID, please contact your administrator or support team.
-        </p>
-        
-        {/* Demo Organization IDs */}
-        <div className="mt-3 text-xs">
-          <p className="font-medium text-primary-800">Demo Organization IDs:</p>
-          <ul className="mt-1 space-y-1 text-primary-700">
-            <li>• <strong>demo-org-1</strong>: Acme Corporation</li>
-            <li>• <strong>demo-org-2</strong>: TechStart Solutions</li>
-            <li>• <strong>demo-org-3</strong>: Global Enterprises</li>
-          </ul>
-        </div>
-      </div>
+
     </div>
   );
 };
