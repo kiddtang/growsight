@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Tag, X } from 'lucide-react';
+import { Tag, Plus, X } from 'lucide-react';
+import { Competency } from '../../types';
 import { useCompetencyStore } from '../../stores/competencyStore';
 
 interface CompetencySelectorProps {
