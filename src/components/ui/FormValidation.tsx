@@ -120,7 +120,7 @@ export const FormValidation: React.FC<FormValidationProps> = ({
       setErrors(newErrors);
       onValidationChange?.(newErrors);
     }
-  }, [data, rules, showRealTime, validateAll, onValidationChange]);
+  }, [data, rules, showRealTime, validateAll]);
 
   const markFieldAsTouched = (fieldName: string) => {
     setTouched(prev => new Set([...prev, fieldName]));
