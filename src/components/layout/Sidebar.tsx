@@ -1,3 +1,4 @@
+import React from 'react';
 import { 
   X, 
   BarChart4, 
@@ -25,6 +26,8 @@ import {
 } from 'lucide-react';
 import { User as UserType } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
+import { useOrganizationStore } from '../../stores/organizationStore';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -34,11 +37,8 @@ interface SidebarProps {
 
 const Sidebar = ({ isOpen, toggleSidebar, user }: SidebarProps) => {
   const { hasPermission } = useAuthStore();
-  const isRoot = user?.role === 'root';
   const isSuperAdmin = user?.role === 'super_admin';
   const isOrgAdmin = user?.role === 'org_admin';
-  const isSubscriber = user?.role === 'subscriber';
-  const isAdminLevel = isSuperAdmin || isOrgAdmin;
   
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: <BarChart4 className="h-5 w-5" />, roles: ['root', 'super_admin', 'org_admin', 'employee', 'reviewer', 'subscriber'] },
@@ -169,7 +169,7 @@ const Sidebar = ({ isOpen, toggleSidebar, user }: SidebarProps) => {
       
       {/* Sidebar */}
       <div 
-        className={`fixed inset-y-0 left-0 z-30 w-64 bg-primary-800 text-white transform transition duration-300 ease-in-out md:translate-x-0 md:static md:inset-auto md:h-screen ${
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-primary-800 text-white transform transition duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto lg:h-screen ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
